@@ -1,0 +1,138 @@
+#!/usr/bin/python
+# -*- coding:utf-8 -*-
+import requests
+import os
+import time
+import subprocess
+import requests.packages
+import db_manager
+
+
+
+requests.packages.urllib3.disable_warnings()
+TOKEN = '108005324:AAE5cz-TlGIHW9ByvsWC6ogxf49UQSw6l6U' #Auth token
+requestUrl = 'https://api.telegram.org/bot108005324:AAE5cz-TlGIHW9ByvsWC6ogxf49UQSw6l6U/'
+ADMIN_ID = 39552806
+offset = 0 #last message id
+
+def getUpdates():
+    global offset
+    url = requestUrl + 'getUpdates'
+    data = {'offset': offset + 1, 'limit': 5, "timeout": 0}
+    try :
+        request = requests.post(url, data)
+    except :
+        print 'fail'
+        return  False
+    if not request.status_code == 200 : return  False #проверка ответа от сервера
+    if not request.json()['ok'] : return  False #проверка успешности авторизации
+    for update in request.json()['result']: # Извлекаем id сообщения
+        offset = update['update_id']
+        if not 'message' in update or not 'text' in update['message']:
+            print 'no update message'
+            continue
+        from_id = update['message']['chat']['id'] #id отправителя
+        message = update['message']['text']
+        try:
+            name = update['message']['chat']['username']
+            if not (db_manager.checkUsr(from_id)) :
+              db_manager.createUser(from_id,name)
+            else:
+              db_manager.printUserInfo(from_id)
+            parameters = (offset, name, from_id, message)
+            reportRecievingToAdmin(from_id,message,name)
+            run_command(*parameters)
+        except:
+            text = 'Pick a username or sasay'
+            send_message(from_id,text)
+            name = 'huesos'
+            reportRecievingToAdmin(from_id,message,name)
+
+
+
+def run_command(offset, name, from_id, cmd):
+    reply(cmd,from_id)
+    data = (offset, name, from_id, cmd)
+    print ('cmd (id%s) , from %s (id%s) cmd %s' %data)
+
+def send_message(chat_id,text) :
+    data = {'chat_id': chat_id, 'text': text}
+    print(data)
+    request = requests.post(requestUrl + 'sendMessage', data=data)
+    if not  request.status_code == 200 :
+        return False
+    print(request.json()['ok'])
+    return request.json()['ok']
+
+def sendAnonymousmsg(fromID,toID,text) :
+    data = data = {'chat_id': toID, 'text': text}
+    print(data)
+    request = requests.post(requestUrl + 'sendMessage', data=data)
+    if not  request.status_code == 200 :
+        return False
+    print(request.json()['ok'])
+    db_manager.saveMsg(text,fromID,toID)
+    return request.json()['ok']
+
+def reportSendingToAdmin(chat_id,text,name) :
+    data = (name ,chat_id , text)
+    #msg = ('Jerk @%s (id%s) has recieved the message : "%s" ' % data)
+    print('Msg sent to %s (id%s) "%s"' %data)
+   # send_message(chat_id,msg)
+
+def reportRecievingToAdmin(chat_id,text,name) :
+    data = (name ,chat_id , text)
+    msg = ('Jerk @%s (id%s) has sent the message : "%s" ' % data)
+    print('Msg from %s (id%s) "%s"' %data)
+    send_message(ADMIN_ID,msg)
+
+def getMe():
+    request = requests.post(requestUrl + 'getMe')
+    if not request.status_code == 200 :
+        return  False
+    else :
+        data = (request.json()['result']['first_name'] , request.json()['result']['username'])
+        msg = ('hello , this is %s , @%s , go fuck yourself' % data)
+        print(msg)
+        return msg
+
+def main():
+    while True:
+        try:
+            getUpdates()
+            #time.sleep(1)
+           # send_message(75430554,'mamku ebal')
+            #send_message(ADMIN_ID,'sd')
+        except KeyboardInterrupt:
+            print 'interrupted'
+            break
+
+
+
+
+
+def reply(cmd,fromID):
+      if cmd == '/help':
+        helpstr = 'to send an anonymous message print /msgTO @<username>| <message text>'
+        send_message(fromID,helpstr)
+      elif str(cmd).find('/msgTo') > -1 :
+          try:
+              print('sending')
+              usrname = str(cmd).split('@')[1].split('|')[0]
+              print(usrname)
+              toID = db_manager.getUserChatID(usrname)
+              text = str(cmd).split('|')[1]
+              sendAnonymousmsg(fromID,toID,text)
+          except:
+              print('error')
+      elif cmd == '/users':
+          msg = db_manager.getUserList()
+          send_message(fromID,msg)
+
+
+if __name__ == "__main__":
+    main()
+
+
+
+
